@@ -1,0 +1,12 @@
+# Build output
+build/
+
+# sdkconfig is generated from sdkconfig.defaults
+sdkconfig
+sdkconfig.old
+
+# Component manager downloads (see main/idf_component.yml and dependencies.lock)
+managed_components/
+
+# IDE
+.vscode/
