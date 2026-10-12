@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "app.h"
 #include "balance.h"
@@ -105,7 +106,19 @@ static void balance_task(void *arg)
             char text[40];
             snprintf(text, sizeof(text), "%s %s", info.currency, info.total);
             ui_balance_set_amount(text);
-            ui_balance_set_api("Balance updated");
+
+            /* last refresh time (falls back before NTP is synced) */
+            time_t now = time(NULL);
+            struct tm tm_now;
+            localtime_r(&now, &tm_now);
+            if (tm_now.tm_year + 1900 >= 2024) {
+                char upd[48];
+                snprintf(upd, sizeof(upd), "Updated %02d:%02d:%02d",
+                         tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec);
+                ui_balance_set_api(upd);
+            } else {
+                ui_balance_set_api("Balance updated");
+            }
             ESP_LOGI(TAG, "balance: %s %s", info.currency, info.total);
         } else {
             switch (r) {
