@@ -28,7 +28,7 @@ static const char *TAG = "display";
 #define LCD_CMD_BITS        8
 #define LCD_PARAM_BITS      8
 
-#define LCD_DRAW_BUF_LINES  40          /* LVGL draw buffer height, 240x40 px per buffer */
+#define LCD_DRAW_BUF_LINES  24          /* LVGL draw buffer height, 240x24 px per buffer */
 
 static esp_lcd_panel_handle_t s_panel = NULL;
 

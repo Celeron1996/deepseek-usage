@@ -1,33 +1,25 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
-
-#include "esp_wifi.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * @brief Create the LVGL screen (header, list and status bar).
- */
+/* Create the LVGL clock timer (call once, after display_init). */
 void ui_init(void);
 
-/**
- * @brief Replace the list content with the scanned APs.
- */
-void ui_update_ap_list(const wifi_ap_record_t *records, uint16_t count);
+/* Screen 1: provisioning help (SoftAP SSID and configuration URL). */
+void ui_show_setup(const char *ap_ssid, const char *url);
 
-/**
- * @brief Update the bottom status text.
- */
-void ui_set_status(const char *text);
+/* Screen 2: connecting progress. */
+void ui_show_connecting(void);
+void ui_connecting_status(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
-/**
- * @brief Show/hide the scanning spinner.
- */
-void ui_set_scanning(bool scanning);
+/* Screen 3: DeepSeek balance. */
+void ui_show_balance(void);
+void ui_balance_set_amount(const char *text);
+void ui_balance_set_wifi(const char *text);
+void ui_balance_set_api(const char *text);
+void ui_balance_set_url(const char *text);
 
 #ifdef __cplusplus
 }

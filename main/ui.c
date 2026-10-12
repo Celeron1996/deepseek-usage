@@ -1,148 +1,232 @@
 #include "ui.h"
 
+#include <stdarg.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
 
-#define COLOR_BG        lv_color_hex(0x0B1220)
-#define COLOR_HEADER    lv_color_hex(0x111C2E)
-#define COLOR_ACCENT    lv_color_hex(0x38BDF8)
-#define COLOR_TEXT      lv_color_hex(0xE5E7EB)
-#define COLOR_TEXT_DIM  lv_color_hex(0x9CA3AF)
-#define COLOR_DIVIDER   lv_color_hex(0x1F2A3A)
+#define COL_BG     lv_color_hex(0x0B1220)
+#define COL_HEADER lv_color_hex(0x111C2E)
+#define COL_ACCENT lv_color_hex(0x38BDF8)
+#define COL_TEXT   lv_color_hex(0xE5E7EB)
+#define COL_DIM    lv_color_hex(0x94A3B8)
 
-static lv_obj_t *s_list;    /* flex column container acting as the list */
-static lv_obj_t *s_status;
-static lv_obj_t *s_spinner;
+/* The UI itself is English (Montserrat). The CJK font is only used for the
+ * connecting status line, because a user's SSID may contain Chinese. */
+#define SSID_FONT (&lv_font_source_han_sans_sc_16_cjk)
 
-/* One full width row: an icon label plus a text label (modern replacement of
- * the deprecated lv_list widget, see the LVGL "flex list" example). */
-static lv_obj_t *add_row(const char *icon, const char *text)
+static lv_obj_t *s_conn_status; /* screen 2 */
+static lv_obj_t *s_amount;      /* screen 3 */
+static lv_obj_t *s_wifi;
+static lv_obj_t *s_api;
+static lv_obj_t *s_url;
+static lv_obj_t *s_clock;
+
+static lv_obj_t *screen_prepare(void)
 {
-    lv_obj_t *row = lv_button_create(s_list);
-    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_radius(row, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(row, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
-    lv_obj_set_style_border_width(row, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(row, COLOR_DIVIDER, LV_PART_MAIN);
-    lv_obj_set_style_pad_hor(row, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_ver(row, 7, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(row, 8, LV_PART_MAIN);
+    lv_obj_t *scr = lv_screen_active();
+    lv_obj_clean(scr);
+    lv_obj_set_style_bg_color(scr, COL_BG, LV_PART_MAIN);
+    lv_obj_set_scrollable(scr, false);
+    lv_obj_set_style_text_font(scr, &lv_font_montserrat_14, LV_PART_MAIN);
 
-    lv_obj_t *icon_label = lv_label_create(row);
-    lv_label_set_text(icon_label, icon);
-    lv_obj_set_style_text_color(icon_label, COLOR_ACCENT, LV_PART_MAIN);
-
-    lv_obj_t *label = lv_label_create(row);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_color(label, COLOR_TEXT, LV_PART_MAIN);
-    lv_obj_set_flex_grow(label, 1);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-
-    return row;
+    s_conn_status = NULL;
+    s_amount = NULL;
+    s_wifi = NULL;
+    s_api = NULL;
+    s_url = NULL;
+    s_clock = NULL;
+    return scr;
 }
 
-void ui_init(void)
+static lv_obj_t *make_header(lv_obj_t *scr, const char *title)
 {
-    lvgl_port_lock(0);
-
-    lv_obj_t *scr = lv_screen_active();
-    lv_obj_set_style_bg_color(scr, COLOR_BG, LV_PART_MAIN);
-    lv_obj_set_scrollable(scr, false);
-
-    /* header: title + scanning spinner */
     lv_obj_t *header = lv_obj_create(scr);
     lv_obj_remove_style_all(header);
     lv_obj_set_size(header, LV_PCT(100), 38);
     lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(header, COLOR_HEADER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(header, COL_HEADER, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(header, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(header, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(header, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(header, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(header, 10, LV_PART_MAIN);
     lv_obj_set_scrollable(header, false);
 
-    lv_obj_t *title = lv_label_create(header);
-    lv_label_set_text(title, "Wi-Fi Scanner");
-    lv_obj_set_style_text_color(title, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t *label = lv_label_create(header);
+    lv_label_set_text(label, title);
+    lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
+    return header;
+}
 
-    s_spinner = lv_spinner_create(header);
-    lv_obj_set_size(s_spinner, 22, 22);
-    lv_obj_set_style_arc_color(s_spinner, COLOR_ACCENT, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(s_spinner, 3, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(s_spinner, 3, LV_PART_MAIN);
-    lv_obj_align(s_spinner, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_clickable(s_spinner, false);
-    lv_obj_set_hidden(s_spinner, true);
-    lv_spinner_set_anim_params(s_spinner, 1000, 60);
+static void make_line(lv_obj_t *scr, const char *text, int y,
+                      const lv_font_t *font, lv_color_t color)
+{
+    lv_obj_t *label = lv_label_create(scr);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 12, y);
+}
 
-    /* AP list: a flex column, the modern way to build lists in LVGL 9.6 */
-    s_list = lv_obj_create(scr);
-    lv_obj_set_size(s_list, LV_PCT(100), 176);
-    lv_obj_align(s_list, LV_ALIGN_TOP_MID, 0, 38);
-    lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_bg_opa(s_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(s_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_list, &lv_font_montserrat_12, LV_PART_MAIN);
+void ui_show_setup(const char *ap_ssid, const char *url)
+{
+    lvgl_port_lock(0);
 
-    lv_obj_t *hint = lv_label_create(s_list);
-    lv_obj_set_width(hint, LV_PCT(100));
-    lv_label_set_text(hint, "Waiting for scan...");
-    lv_obj_set_style_text_color(hint, COLOR_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(hint, 8, LV_PART_MAIN);
+    lv_obj_t *scr = screen_prepare();
+    make_header(scr, "Wi-Fi Setup");
 
-    /* status bar */
-    s_status = lv_label_create(scr);
-    lv_label_set_text(s_status, "Ready");
-    lv_obj_set_style_text_color(s_status, COLOR_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_status, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_align(s_status, LV_ALIGN_BOTTOM_MID, 0, -4);
+    make_line(scr, "1. Join Wi-Fi hotspot:", 48, &lv_font_montserrat_14, COL_TEXT);
+    make_line(scr, ap_ssid, 70, &lv_font_montserrat_14, COL_ACCENT);
+    make_line(scr, "2. Open in browser:", 98, &lv_font_montserrat_14, COL_TEXT);
+    make_line(scr, url, 120, &lv_font_montserrat_14, COL_ACCENT);
+    make_line(scr, "3. Fill in the form and save.", 148, &lv_font_montserrat_12, COL_DIM);
+    make_line(scr, "No pop-up? Open the URL manually.", 168, &lv_font_montserrat_12, COL_DIM);
+
+    lv_obj_t *note = lv_label_create(scr);
+    lv_obj_set_style_text_color(note, COL_DIM, LV_PART_MAIN);
+    lv_obj_set_style_text_font(note, &lv_font_montserrat_10, LV_PART_MAIN);
+    lv_label_set_text(note, "hold button 5s = factory reset");
+    lv_obj_align(note, LV_ALIGN_BOTTOM_MID, 0, -4);
 
     lvgl_port_unlock();
 }
 
-void ui_update_ap_list(const wifi_ap_record_t *records, uint16_t count)
+void ui_show_connecting(void)
 {
     lvgl_port_lock(0);
 
-    lv_obj_clean(s_list);
+    lv_obj_t *scr = screen_prepare();
+    make_header(scr, "Connecting Wi-Fi");
 
-    if (count == 0) {
-        add_row(LV_SYMBOL_WARNING, "No network found");
-    } else {
-        char item[64];
-        for (uint16_t i = 0; i < count; i++) {
-            const char *ssid = (const char *)records[i].ssid;
-            if (ssid[0] == '\0') {
-                ssid = "<hidden>";
-            }
-            snprintf(item, sizeof(item), "%s  %d dBm", ssid, (int)records[i].rssi);
-            add_row(LV_SYMBOL_WIFI, item);
-        }
+    lv_obj_t *spinner = lv_spinner_create(scr);
+    lv_obj_set_size(spinner, 64, 64);
+    lv_obj_set_style_arc_color(spinner, COL_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(spinner, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(spinner, 6, LV_PART_MAIN);
+    lv_obj_align(spinner, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_set_clickable(spinner, false);
+    lv_spinner_set_anim_params(spinner, 1000, 60);
+
+    s_conn_status = lv_label_create(scr);
+    lv_obj_set_width(s_conn_status, 216);
+    lv_label_set_long_mode(s_conn_status, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_text_align(s_conn_status, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_conn_status, SSID_FONT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_conn_status, COL_TEXT, LV_PART_MAIN);
+    lv_label_set_text(s_conn_status, "Connecting...");
+    lv_obj_align(s_conn_status, LV_ALIGN_CENTER, 0, 55);
+
+    lvgl_port_unlock();
+}
+
+void ui_connecting_status(const char *fmt, ...)
+{
+    char buf[192];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    lvgl_port_lock(0);
+    if (s_conn_status != NULL) {
+        lv_label_set_text(s_conn_status, buf);
     }
-
-    lv_label_set_text_fmt(s_status, "%d networks - press button to rescan", (int)count);
     lvgl_port_unlock();
 }
 
-void ui_set_status(const char *text)
+void ui_show_balance(void)
 {
     lvgl_port_lock(0);
-    lv_label_set_text(s_status, text);
+
+    lv_obj_t *scr = screen_prepare();
+    lv_obj_t *header = make_header(scr, "DeepSeek Balance");
+
+    s_clock = lv_label_create(header);
+    lv_obj_set_style_text_font(s_clock, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_clock, COL_DIM, LV_PART_MAIN);
+    lv_label_set_text(s_clock, "--:--:--");
+    lv_obj_align(s_clock, LV_ALIGN_RIGHT_MID, 0, 0);
+
+    s_amount = lv_label_create(scr);
+    lv_obj_set_style_text_font(s_amount, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_amount, lv_color_white(), LV_PART_MAIN);
+    lv_label_set_text(s_amount, "--");
+    lv_obj_align(s_amount, LV_ALIGN_CENTER, 0, -30);
+
+    s_wifi = lv_label_create(scr);
+    lv_obj_set_width(s_wifi, 216);
+    lv_label_set_long_mode(s_wifi, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_text_align(s_wifi, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_wifi, COL_TEXT, LV_PART_MAIN);
+    lv_label_set_text(s_wifi, "Initializing...");
+    lv_obj_align(s_wifi, LV_ALIGN_CENTER, 0, 32);
+
+    s_api = lv_label_create(scr);
+    lv_obj_set_width(s_api, 216);
+    lv_label_set_long_mode(s_api, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_text_align(s_api, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_api, COL_DIM, LV_PART_MAIN);
+    lv_label_set_text(s_api, "Waiting for data...");
+    lv_obj_align(s_api, LV_ALIGN_CENTER, 0, 58);
+
+    s_url = lv_label_create(scr);
+    lv_obj_set_style_text_font(s_url, &lv_font_montserrat_10, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_url, COL_DIM, LV_PART_MAIN);
+    lv_label_set_text(s_url, "config: waiting network");
+    lv_obj_align(s_url, LV_ALIGN_BOTTOM_MID, 0, -3);
+
     lvgl_port_unlock();
 }
 
-void ui_set_scanning(bool scanning)
+static void set_label_text(lv_obj_t **label, const char *text)
 {
     lvgl_port_lock(0);
-    lv_obj_set_hidden(s_spinner, !scanning);
+    if (*label != NULL) {
+        lv_label_set_text(*label, text);
+    }
     lvgl_port_unlock();
+}
+
+void ui_balance_set_amount(const char *text)
+{
+    set_label_text(&s_amount, text);
+}
+
+void ui_balance_set_wifi(const char *text)
+{
+    set_label_text(&s_wifi, text);
+}
+
+void ui_balance_set_api(const char *text)
+{
+    set_label_text(&s_api, text);
+}
+
+void ui_balance_set_url(const char *text)
+{
+    set_label_text(&s_url, text);
+}
+
+/* Runs inside the LVGL task (lv_timer), no port lock needed. */
+static void clock_timer_cb(lv_timer_t *timer)
+{
+    if (s_clock == NULL) {
+        return;
+    }
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    if (tm_now.tm_year + 1900 < 2024) {
+        lv_label_set_text(s_clock, "--:--:--");
+    } else {
+        lv_label_set_text_fmt(s_clock, "%02d:%02d:%02d",
+                              tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec);
+    }
+}
+
+void ui_init(void)
+{
+    lv_timer_create(clock_timer_cb, 1000, NULL);
 }

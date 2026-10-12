@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -8,18 +8,15 @@
 extern "C" {
 #endif
 
-/**
- * @brief Init the push button (GPIO1, active low, pulled up).
- */
+#define BUTTON_TIMEOUT     0
+#define BUTTON_SHORT_PRESS 1
+#define BUTTON_LONG_PRESS  2
+
 esp_err_t button_init(void);
 
-/**
- * @brief Block until the button is pressed or the timeout expires.
- *
- * @param timeout_ms  Timeout in milliseconds.
- * @return true if the button was pressed (debounced and released), false on timeout.
- */
-bool button_wait_for_press(uint32_t timeout_ms);
+/* Wait for a press (GPIO1, active low) and measure its duration.
+ * Returns BUTTON_SHORT_PRESS, BUTTON_LONG_PRESS (>= 5 s) or BUTTON_TIMEOUT. */
+int button_wait(uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }
