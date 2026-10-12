@@ -23,7 +23,7 @@ static const char *TAG = "deepseek";
 #define WIFI_CONNECT_ATTEMPTS       3
 #define WIFI_CONNECT_TIMEOUT_MS     15000
 #define WIFI_RECONNECT_INTERVAL_MS  5000
-#define BALANCE_REFRESH_INTERVAL_MS 60000
+#define BALANCE_REFRESH_INTERVAL_MS 10000
 
 typedef enum {
     ST_SETUP,     /* screen 1: SoftAP + web provisioning */
