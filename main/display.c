@@ -62,7 +62,7 @@ esp_err_t display_init(void)
 
     const esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = LCD_GPIO_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel), TAG, "panel create failed");

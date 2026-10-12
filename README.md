@@ -151,9 +151,9 @@ CONFIG_IDF_TARGET="esp32s2"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y            # partitions.csv，factory 3MB
 
-# LVGL：英文界面 + 备用中文字库 + 改用 IDF 堆
+# LVGL：英文界面 + 蓝白浅色主题 + 备用中文字库 + 改用 IDF 堆
 CONFIG_LV_COLOR_DEPTH_16=y
-CONFIG_LV_THEME_DEFAULT_DARK=y
+# CONFIG_LV_THEME_DEFAULT_DARK is not set     # 蓝白风格使用 LVGL 浅色主题
 CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_16_CJK=y # 仅用于显示可能含中文的 Wi-Fi SSID，界面文字全英文
 CONFIG_LV_FONT_MONTSERRAT_10/12/14/28=y
 CONFIG_LV_USE_CLIB_MALLOC=y                # 必须！LVGL 内置分配器占 64KB 静态 DRAM 会链接失败

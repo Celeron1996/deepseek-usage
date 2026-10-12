@@ -7,11 +7,14 @@
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
 
-#define COL_BG     lv_color_hex(0x0B1220)
-#define COL_HEADER lv_color_hex(0x111C2E)
-#define COL_ACCENT lv_color_hex(0x38BDF8)
-#define COL_TEXT   lv_color_hex(0xE5E7EB)
-#define COL_DIM    lv_color_hex(0x94A3B8)
+#define COL_BG          lv_color_hex(0xFFFFFF) /* white page */
+#define COL_HEADER      lv_color_hex(0x2563EB) /* blue header bar */
+#define COL_ACCENT      lv_color_hex(0x2563EB) /* blue accent (ssid / url) */
+#define COL_TEXT        lv_color_hex(0x1E293B) /* dark slate text */
+#define COL_DIM         lv_color_hex(0x64748B) /* secondary text */
+#define COL_HEADER_DIM  lv_color_hex(0xDBEAFE) /* light blue on header */
+#define COL_AMOUNT      lv_color_hex(0x1D4ED8) /* strong blue amount */
+#define COL_SPINNER_BG  lv_color_hex(0xDBEAFE) /* spinner track */
 
 /* The UI itself is English (Montserrat). The CJK font is only used for the
  * connecting status line, because a user's SSID may contain Chinese. */
@@ -102,6 +105,7 @@ void ui_show_connecting(void)
 
     lv_obj_t *spinner = lv_spinner_create(scr);
     lv_obj_set_size(spinner, 64, 64);
+    lv_obj_set_style_arc_color(spinner, COL_SPINNER_BG, LV_PART_MAIN);
     lv_obj_set_style_arc_color(spinner, COL_ACCENT, LV_PART_INDICATOR);
     lv_obj_set_style_arc_width(spinner, 6, LV_PART_INDICATOR);
     lv_obj_set_style_arc_width(spinner, 6, LV_PART_MAIN);
@@ -145,13 +149,13 @@ void ui_show_balance(void)
 
     s_clock = lv_label_create(header);
     lv_obj_set_style_text_font(s_clock, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_clock, COL_DIM, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_clock, COL_HEADER_DIM, LV_PART_MAIN);
     lv_label_set_text(s_clock, "--:--:--");
     lv_obj_align(s_clock, LV_ALIGN_RIGHT_MID, 0, 0);
 
     s_amount = lv_label_create(scr);
     lv_obj_set_style_text_font(s_amount, &lv_font_montserrat_28, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_amount, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_amount, COL_AMOUNT, LV_PART_MAIN);
     lv_label_set_text(s_amount, "--");
     lv_obj_align(s_amount, LV_ALIGN_CENTER, 0, -30);
 

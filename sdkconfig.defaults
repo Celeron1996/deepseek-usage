@@ -8,9 +8,9 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
-# LVGL configuration (UI text is English; the CJK font only renders Chinese SSIDs)
+# LVGL configuration (blue-white light UI; CJK font only renders Chinese SSIDs)
 CONFIG_LV_COLOR_DEPTH_16=y
-CONFIG_LV_THEME_DEFAULT_DARK=y
+# CONFIG_LV_THEME_DEFAULT_DARK is not set
 CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_16_CJK=y
 CONFIG_LV_FONT_MONTSERRAT_10=y
 CONFIG_LV_FONT_MONTSERRAT_12=y

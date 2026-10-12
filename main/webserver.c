@@ -99,17 +99,19 @@ static const char PAGE_HEAD[] =
     "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
     "<title>DeepSeek Balance Setup</title><style>"
-    "body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:24px;}"
-    "h2{margin:0 0 4px;font-size:20px;color:#38bdf8;}"
-    ".sub{font-size:13px;color:#64748b;margin-bottom:16px;}"
-    "label{display:block;margin:14px 0 6px;font-size:14px;color:#94a3b8;}"
-    "input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #334155;"
-    "background:#0f172a;color:#e2e8f0;font-size:16px;}"
-    "button{width:100%;margin-top:20px;padding:12px;border:0;border-radius:8px;background:#38bdf8;"
-    "color:#0b1220;font-size:16px;font-weight:600;}"
-    "a{color:#38bdf8;}"
-    ".err{color:#f87171;font-size:15px;line-height:1.6;}"
-    "</style></head><body><div style=\"max-width:420px;margin:0 auto\">";
+    "body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#EFF6FF;color:#1E293B;margin:0;padding:24px;}"
+    ".card{max-width:420px;margin:0 auto;background:#FFFFFF;border-radius:14px;padding:22px;"
+    "box-shadow:0 8px 28px rgba(37,99,235,.14);}"
+    "h2{margin:0 0 4px;font-size:20px;color:#2563EB;}"
+    ".sub{font-size:13px;color:#64748B;margin-bottom:16px;}"
+    "label{display:block;margin:14px 0 6px;font-size:14px;color:#475569;}"
+    "input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #BFDBFE;"
+    "background:#FFFFFF;color:#1E293B;font-size:16px;}"
+    "button{width:100%;margin-top:20px;padding:12px;border:0;border-radius:8px;background:#2563EB;"
+    "color:#FFFFFF;font-size:16px;font-weight:600;}"
+    "a{color:#2563EB;}"
+    ".err{color:#DC2626;font-size:15px;line-height:1.6;}"
+    "</style></head><body><div class=\"card\">";
 
 static esp_err_t send_page(httpd_req_t *req, const char *html)
 {
