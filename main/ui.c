@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -22,6 +23,20 @@
 /* The UI itself is English (Montserrat). The CJK font is only used for the
  * connecting status line, because a user's SSID may contain Chinese. */
 #define SSID_FONT (&lv_font_source_han_sans_sc_16_cjk)
+
+/* DeepSeek mascot animation, pre-converted to 100x100 RGB565 frames that live
+ * in flash (27 frames @ 60 ms). Drawing straight from flash costs no RAM. */
+#define GIF_W          100
+#define GIF_H          100
+#define GIF_FRAMES     27
+#define GIF_PERIOD_MS  60
+
+extern const uint8_t deepseek_frames_bin_start[] asm("_binary_deepseek_frames_bin_start");
+extern const uint8_t deepseek_frames_bin_end[] asm("_binary_deepseek_frames_bin_end");
+
+static lv_image_dsc_t s_gif_dsc[GIF_FRAMES];
+static lv_obj_t *s_gif_img;
+static uint32_t s_gif_frame;
 
 static lv_obj_t *s_conn_status; /* screen 2 */
 static lv_obj_t *s_amount;      /* screen 3 */
@@ -46,6 +61,7 @@ static lv_obj_t *screen_prepare(void)
     s_api = NULL;
     s_url = NULL;
     s_clock = NULL;
+    s_gif_img = NULL;
     return scr;
 }
 
@@ -145,6 +161,26 @@ void ui_connecting_status(const char *fmt, ...)
     lvgl_port_unlock();
 }
 
+static void gif_frames_init(void)
+{
+    static bool inited = false;
+    if (inited) {
+        return;
+    }
+    inited = true;
+
+    const size_t frame_size = GIF_W * GIF_H * 2;
+    for (int i = 0; i < GIF_FRAMES; i++) {
+        s_gif_dsc[i].header.magic = LV_IMAGE_HEADER_MAGIC;
+        s_gif_dsc[i].header.cf = LV_COLOR_FORMAT_RGB565;
+        s_gif_dsc[i].header.w = GIF_W;
+        s_gif_dsc[i].header.h = GIF_H;
+        s_gif_dsc[i].header.stride = GIF_W * 2;
+        s_gif_dsc[i].data_size = frame_size;
+        s_gif_dsc[i].data = deepseek_frames_bin_start + (size_t)i * frame_size;
+    }
+}
+
 void ui_show_balance(void)
 {
     lvgl_port_lock(0);
@@ -162,7 +198,15 @@ void ui_show_balance(void)
     lv_obj_set_style_text_font(s_amount, &lv_font_montserrat_28, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_amount, COL_AMOUNT, LV_PART_MAIN);
     lv_label_set_text(s_amount, "--");
-    lv_obj_align(s_amount, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_align(s_amount, LV_ALIGN_CENTER, 0, -55);
+
+    /* mascot animation, centered below the balance */
+    gif_frames_init();
+    s_gif_frame = 0;
+    s_gif_img = lv_image_create(scr);
+    lv_image_set_src(s_gif_img, &s_gif_dsc[0]);
+    lv_obj_align(s_gif_img, LV_ALIGN_CENTER, 0, 22);
+    lv_obj_set_clickable(s_gif_img, false);
 
     /* small Wi-Fi state icon, top-right just below the header bar */
     lv_obj_t *icon_box = lv_obj_create(scr);
@@ -238,6 +282,16 @@ void ui_balance_set_url(const char *text)
 }
 
 /* Runs inside the LVGL task (lv_timer), no port lock needed. */
+static void gif_timer_cb(lv_timer_t *timer)
+{
+    if (s_gif_img == NULL) {
+        return;
+    }
+    s_gif_frame = (s_gif_frame + 1) % GIF_FRAMES;
+    lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_frame]);
+}
+
+/* Runs inside the LVGL task (lv_timer), no port lock needed. */
 static void clock_timer_cb(lv_timer_t *timer)
 {
     if (s_clock == NULL) {
@@ -257,4 +311,5 @@ static void clock_timer_cb(lv_timer_t *timer)
 void ui_init(void)
 {
     lv_timer_create(clock_timer_cb, 1000, NULL);
+    lv_timer_create(gif_timer_cb, GIF_PERIOD_MS, NULL);
 }

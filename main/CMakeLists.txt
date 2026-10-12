@@ -11,6 +11,8 @@ idf_component_register(
         "ui.c"
     INCLUDE_DIRS
         "."
+    EMBED_FILES
+        "deepseek_frames.bin"
     REQUIRES
         esp_wifi
         esp_netif
