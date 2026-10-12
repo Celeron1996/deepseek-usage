@@ -136,10 +136,10 @@ static void enter_balance_screen(void)
 
     ui_show_balance();
     if (wifi_mgr_is_connected()) {
-        ui_balance_set_wifi("Wi-Fi connected");
+        ui_balance_set_wifi(true);
         on_wifi_up();
     } else {
-        ui_balance_set_wifi("Wi-Fi connect failed, retrying...");
+        ui_balance_set_wifi(false);
         ui_balance_set_url("config: waiting network");
     }
     ui_balance_set_amount("--");
@@ -307,12 +307,12 @@ static void app_task(void *arg)
             switch (ev.type) {
             case APP_EVT_STA_GOT_IP:
                 ESP_LOGI(TAG, "wifi reconnected");
-                ui_balance_set_wifi("Wi-Fi connected");
+                ui_balance_set_wifi(true);
                 on_wifi_up();
                 xTaskNotifyGive(s_balance_task);
                 break;
             case APP_EVT_STA_DISCONNECTED:
-                ui_balance_set_wifi("Wi-Fi lost, reconnecting...");
+                ui_balance_set_wifi(false);
                 ui_balance_set_url("config: waiting network");
                 s_last_reconnect = xTaskGetTickCount();
                 break;

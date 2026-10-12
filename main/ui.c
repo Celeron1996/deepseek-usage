@@ -15,6 +15,9 @@
 #define COL_HEADER_DIM  lv_color_hex(0xDBEAFE) /* light blue on header */
 #define COL_AMOUNT      lv_color_hex(0x1D4ED8) /* strong blue amount */
 #define COL_SPINNER_BG  lv_color_hex(0xDBEAFE) /* spinner track */
+#define COL_WIFI_OK     lv_color_hex(0x16A34A) /* green: connected */
+#define COL_WIFI_OFF    lv_color_hex(0x94A3B8) /* gray: disconnected */
+#define COL_WIFI_SLASH  lv_color_hex(0xDC2626) /* red slash on the off icon */
 
 /* The UI itself is English (Montserrat). The CJK font is only used for the
  * connecting status line, because a user's SSID may contain Chinese. */
@@ -22,7 +25,8 @@
 
 static lv_obj_t *s_conn_status; /* screen 2 */
 static lv_obj_t *s_amount;      /* screen 3 */
-static lv_obj_t *s_wifi;
+static lv_obj_t *s_wifi_icon;
+static lv_obj_t *s_wifi_slash;
 static lv_obj_t *s_api;
 static lv_obj_t *s_url;
 static lv_obj_t *s_clock;
@@ -37,7 +41,8 @@ static lv_obj_t *screen_prepare(void)
 
     s_conn_status = NULL;
     s_amount = NULL;
-    s_wifi = NULL;
+    s_wifi_icon = NULL;
+    s_wifi_slash = NULL;
     s_api = NULL;
     s_url = NULL;
     s_clock = NULL;
@@ -159,13 +164,25 @@ void ui_show_balance(void)
     lv_label_set_text(s_amount, "--");
     lv_obj_align(s_amount, LV_ALIGN_CENTER, 0, -30);
 
-    s_wifi = lv_label_create(scr);
-    lv_obj_set_width(s_wifi, 216);
-    lv_label_set_long_mode(s_wifi, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_style_text_align(s_wifi, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_wifi, COL_TEXT, LV_PART_MAIN);
-    lv_label_set_text(s_wifi, "Initializing...");
-    lv_obj_align(s_wifi, LV_ALIGN_CENTER, 0, 32);
+    /* small Wi-Fi state icon, top-right just below the header bar */
+    lv_obj_t *icon_box = lv_obj_create(scr);
+    lv_obj_remove_style_all(icon_box);
+    lv_obj_set_size(icon_box, 22, 22);
+    lv_obj_align(icon_box, LV_ALIGN_TOP_RIGHT, -8, 42);
+    lv_obj_set_scrollable(icon_box, false);
+    lv_obj_set_clickable(icon_box, false);
+
+    s_wifi_icon = lv_label_create(icon_box);
+    lv_obj_set_style_text_font(s_wifi_icon, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_wifi_icon, COL_WIFI_OFF, LV_PART_MAIN);
+    lv_label_set_text(s_wifi_icon, LV_SYMBOL_WIFI);
+    lv_obj_center(s_wifi_icon);
+
+    static lv_point_precise_t wifi_slash_pts[2] = { { 2, 18 }, { 20, 4 } };
+    s_wifi_slash = lv_line_create(icon_box);
+    lv_line_set_points(s_wifi_slash, wifi_slash_pts, 2);
+    lv_obj_set_style_line_width(s_wifi_slash, 2, LV_PART_MAIN);
+    lv_obj_set_style_line_color(s_wifi_slash, COL_WIFI_SLASH, LV_PART_MAIN);
 
     s_api = lv_label_create(scr);
     lv_obj_set_width(s_api, 216);
@@ -173,7 +190,7 @@ void ui_show_balance(void)
     lv_obj_set_style_text_align(s_api, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_api, COL_DIM, LV_PART_MAIN);
     lv_label_set_text(s_api, "Waiting for data...");
-    lv_obj_align(s_api, LV_ALIGN_CENTER, 0, 58);
+    lv_obj_align(s_api, LV_ALIGN_CENTER, 0, 35);
 
     s_url = lv_label_create(scr);
     lv_obj_set_style_text_font(s_url, &lv_font_montserrat_10, LV_PART_MAIN);
@@ -198,9 +215,16 @@ void ui_balance_set_amount(const char *text)
     set_label_text(&s_amount, text);
 }
 
-void ui_balance_set_wifi(const char *text)
+void ui_balance_set_wifi(bool connected)
 {
-    set_label_text(&s_wifi, text);
+    lvgl_port_lock(0);
+    if (s_wifi_icon != NULL) {
+        lv_obj_set_style_text_color(s_wifi_icon, connected ? COL_WIFI_OK : COL_WIFI_OFF, LV_PART_MAIN);
+    }
+    if (s_wifi_slash != NULL) {
+        lv_obj_set_hidden(s_wifi_slash, connected);
+    }
+    lvgl_port_unlock();
 }
 
 void ui_balance_set_api(const char *text)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,7 +19,7 @@ void ui_connecting_status(const char *fmt, ...) __attribute__((format(printf, 1,
 /* Screen 3: DeepSeek balance. */
 void ui_show_balance(void);
 void ui_balance_set_amount(const char *text);
-void ui_balance_set_wifi(const char *text);
+void ui_balance_set_wifi(bool connected); /* small icon: green wifi / gray wifi + red slash */
 void ui_balance_set_api(const char *text);
 void ui_balance_set_url(const char *text);
 
