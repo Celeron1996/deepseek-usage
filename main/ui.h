@@ -17,9 +17,16 @@ void ui_show_connecting(void);
 void ui_connecting_status(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /* Screen 3: DeepSeek balance. */
+typedef enum {
+    UI_GIF_NORMAL = 0, /* idle animation */
+    UI_GIF_CHARGE,     /* balance increased */
+    UI_GIF_EXPEND,     /* balance decreased */
+} ui_gif_t;
+
 void ui_show_balance(void);
 void ui_balance_set_amount(const char *text);
 void ui_balance_set_wifi(bool connected); /* small icon: green wifi / gray wifi + red slash */
+void ui_balance_set_gif(ui_gif_t gif);
 void ui_balance_set_api(const char *text);
 void ui_balance_set_url(const char *text);
 

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -74,9 +75,19 @@ static void start_ap_mode(void)
 
 /* ----------------------------- balance task ----------------------------- */
 
+static long balance_to_cents(const char *text)
+{
+    double v = strtod(text, NULL);
+    if (v < 0) {
+        v = 0;
+    }
+    return (long)(v * 100.0 + 0.5);
+}
+
 static void balance_task(void *arg)
 {
     char key[160];
+    static long s_last_cents = -1;
 
     while (true) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(BALANCE_REFRESH_INTERVAL_MS));
@@ -106,6 +117,17 @@ static void balance_task(void *arg)
             char text[40];
             snprintf(text, sizeof(text), "%s %s", info.currency, info.total);
             ui_balance_set_amount(text);
+
+            /* pick the mascot animation from the balance change */
+            long cents = balance_to_cents(info.total);
+            if (s_last_cents < 0 || cents == s_last_cents) {
+                ui_balance_set_gif(UI_GIF_NORMAL);
+            } else if (cents > s_last_cents) {
+                ui_balance_set_gif(UI_GIF_CHARGE);
+            } else {
+                ui_balance_set_gif(UI_GIF_EXPEND);
+            }
+            s_last_cents = cents;
 
             /* last refresh time (falls back before NTP is synced) */
             time_t now = time(NULL);

@@ -12,7 +12,9 @@ idf_component_register(
     INCLUDE_DIRS
         "."
     EMBED_FILES
-        "deepseek_frames.bin"
+        "deepseek_normal_frames.bin"
+        "deepseek_charge_frames.bin"
+        "deepseek_expend_frames.bin"
     EMBED_TXTFILES
         "deepseek_ca.pem"
     REQUIRES

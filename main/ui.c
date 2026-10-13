@@ -24,19 +24,29 @@
  * rendered with the default Montserrat font as well. */
 #define SSID_FONT (&lv_font_montserrat_14)
 
-/* DeepSeek mascot animation, pre-converted to 100x100 RGB565 frames that live
- * in flash (27 frames @ 60 ms). Drawing straight from flash costs no RAM. */
-#define GIF_W          100
-#define GIF_H          100
-#define GIF_FRAMES     27
-#define GIF_PERIOD_MS  60
+/* DeepSeek mascot animations, pre-converted to 88x88 RGB565 frames living in
+ * flash (32 frames @ 30 ms each). Drawing straight from flash costs no RAM.
+ * normal = idle, charge = balance increased, expend = balance decreased. */
+#define GIF_W          88
+#define GIF_H          88
+#define GIF_FRAMES     32
+#define GIF_PERIOD_MS  30
+#define GIF_SETS       3
 
-extern const uint8_t deepseek_frames_bin_start[] asm("_binary_deepseek_frames_bin_start");
-extern const uint8_t deepseek_frames_bin_end[] asm("_binary_deepseek_frames_bin_end");
+extern const uint8_t deepseek_normal_frames_bin_start[] asm("_binary_deepseek_normal_frames_bin_start");
+extern const uint8_t deepseek_charge_frames_bin_start[] asm("_binary_deepseek_charge_frames_bin_start");
+extern const uint8_t deepseek_expend_frames_bin_start[] asm("_binary_deepseek_expend_frames_bin_start");
 
-static lv_image_dsc_t s_gif_dsc[GIF_FRAMES];
+static const uint8_t *const s_gif_bin[GIF_SETS] = {
+    deepseek_normal_frames_bin_start,
+    deepseek_charge_frames_bin_start,
+    deepseek_expend_frames_bin_start,
+};
+
+static lv_image_dsc_t s_gif_dsc[GIF_SETS][GIF_FRAMES];
 static lv_obj_t *s_gif_img;
 static uint32_t s_gif_frame;
+static uint8_t s_gif_set = UI_GIF_NORMAL;
 
 static lv_obj_t *s_conn_status; /* screen 2 */
 static lv_obj_t *s_amount;      /* screen 3 */
@@ -170,14 +180,16 @@ static void gif_frames_init(void)
     inited = true;
 
     const size_t frame_size = GIF_W * GIF_H * 2;
-    for (int i = 0; i < GIF_FRAMES; i++) {
-        s_gif_dsc[i].header.magic = LV_IMAGE_HEADER_MAGIC;
-        s_gif_dsc[i].header.cf = LV_COLOR_FORMAT_RGB565;
-        s_gif_dsc[i].header.w = GIF_W;
-        s_gif_dsc[i].header.h = GIF_H;
-        s_gif_dsc[i].header.stride = GIF_W * 2;
-        s_gif_dsc[i].data_size = frame_size;
-        s_gif_dsc[i].data = deepseek_frames_bin_start + (size_t)i * frame_size;
+    for (int s = 0; s < GIF_SETS; s++) {
+        for (int i = 0; i < GIF_FRAMES; i++) {
+            s_gif_dsc[s][i].header.magic = LV_IMAGE_HEADER_MAGIC;
+            s_gif_dsc[s][i].header.cf = LV_COLOR_FORMAT_RGB565;
+            s_gif_dsc[s][i].header.w = GIF_W;
+            s_gif_dsc[s][i].header.h = GIF_H;
+            s_gif_dsc[s][i].header.stride = GIF_W * 2;
+            s_gif_dsc[s][i].data_size = frame_size;
+            s_gif_dsc[s][i].data = s_gif_bin[s] + (size_t)i * frame_size;
+        }
     }
 }
 
@@ -202,9 +214,10 @@ void ui_show_balance(void)
 
     /* mascot animation, centered below the balance */
     gif_frames_init();
+    s_gif_set = UI_GIF_NORMAL;
     s_gif_frame = 0;
     s_gif_img = lv_image_create(scr);
-    lv_image_set_src(s_gif_img, &s_gif_dsc[0]);
+    lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][0]);
     lv_obj_align(s_gif_img, LV_ALIGN_CENTER, 0, 22);
     lv_obj_set_clickable(s_gif_img, false);
 
@@ -271,6 +284,20 @@ void ui_balance_set_wifi(bool connected)
     lvgl_port_unlock();
 }
 
+void ui_balance_set_gif(ui_gif_t gif)
+{
+    if (gif >= GIF_SETS) {
+        return;
+    }
+    lvgl_port_lock(0);
+    if (s_gif_img != NULL && gif != s_gif_set) {
+        s_gif_set = (uint8_t)gif;
+        s_gif_frame = 0;
+        lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][0]);
+    }
+    lvgl_port_unlock();
+}
+
 void ui_balance_set_api(const char *text)
 {
     set_label_text(&s_api, text);
@@ -288,7 +315,7 @@ static void gif_timer_cb(lv_timer_t *timer)
         return;
     }
     s_gif_frame = (s_gif_frame + 1) % GIF_FRAMES;
-    lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_frame]);
+    lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][s_gif_frame]);
 }
 
 /* Runs inside the LVGL task (lv_timer), no port lock needed. */
