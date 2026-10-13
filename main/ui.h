@@ -27,6 +27,9 @@ void ui_show_balance(void);
 void ui_balance_set_amount(const char *text);
 void ui_balance_set_wifi(bool connected); /* small icon: green wifi / gray wifi + red slash */
 void ui_balance_set_gif(ui_gif_t gif);
+/* Register a callback invoked from the LVGL task once a special scene
+ * (charge/expend) finished its loop count. Use it to trigger a re-check. */
+void ui_set_special_gif_done_cb(void (*cb)(void));
 void ui_balance_set_api(const char *text);
 void ui_balance_set_url(const char *text);
 

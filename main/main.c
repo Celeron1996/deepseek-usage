@@ -161,7 +161,17 @@ static void balance_task(void *arg)
                 ui_balance_set_api("Invalid response");
                 break;
             }
+            /* a special scene must not stay frozen on errors */
+            ui_balance_set_gif(UI_GIF_NORMAL);
         }
+    }
+}
+
+static void balance_recheck_cb(void)
+{
+    /* called from the LVGL task when a special scene finished its loops */
+    if (s_balance_task != NULL) {
+        xTaskNotifyGive(s_balance_task);
     }
 }
 
@@ -182,6 +192,7 @@ static void enter_balance_screen(void)
 
     if (s_balance_task == NULL) {
         xTaskCreate(balance_task, "balance", 8192, NULL, 4, &s_balance_task);
+        ui_set_special_gif_done_cb(balance_recheck_cb);
     }
     xTaskNotifyGive(s_balance_task);
 }

@@ -33,6 +33,10 @@
 #define GIF_PERIOD_MS  30
 #define GIF_SETS       3
 
+/* charge/expend are one-shot scenes: they loop this many times (about
+ * 4 seconds), then freeze and ask for an immediate balance re-check. */
+#define GIF_SPECIAL_LOOPS 4
+
 extern const uint8_t deepseek_normal_frames_bin_start[] asm("_binary_deepseek_normal_frames_bin_start");
 extern const uint8_t deepseek_charge_frames_bin_start[] asm("_binary_deepseek_charge_frames_bin_start");
 extern const uint8_t deepseek_expend_frames_bin_start[] asm("_binary_deepseek_expend_frames_bin_start");
@@ -47,6 +51,8 @@ static lv_image_dsc_t s_gif_dsc[GIF_SETS][GIF_FRAMES];
 static lv_obj_t *s_gif_img;
 static uint32_t s_gif_frame;
 static uint8_t s_gif_set = UI_GIF_NORMAL;
+static uint8_t s_gif_loops;          /* completed loops of the current special set */
+static void (*s_gif_done_cb)(void);  /* invoked once when a special set finishes */
 
 static lv_obj_t *s_conn_status; /* screen 2 */
 static lv_obj_t *s_amount;      /* screen 3 */
@@ -216,6 +222,7 @@ void ui_show_balance(void)
     gif_frames_init();
     s_gif_set = UI_GIF_NORMAL;
     s_gif_frame = 0;
+    s_gif_loops = 0;
     s_gif_img = lv_image_create(scr);
     lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][0]);
     lv_obj_align(s_gif_img, LV_ALIGN_CENTER, 0, 22);
@@ -290,12 +297,23 @@ void ui_balance_set_gif(ui_gif_t gif)
         return;
     }
     lvgl_port_lock(0);
-    if (s_gif_img != NULL && gif != s_gif_set) {
-        s_gif_set = (uint8_t)gif;
-        s_gif_frame = 0;
-        lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][0]);
+    if (s_gif_img != NULL) {
+        if (gif == UI_GIF_NORMAL && s_gif_set == UI_GIF_NORMAL) {
+            /* idle animation is already running */
+        } else {
+            /* switching sets, or a new trigger of a special scene: play from the start */
+            s_gif_set = (uint8_t)gif;
+            s_gif_frame = 0;
+            s_gif_loops = 0;
+            lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][0]);
+        }
     }
     lvgl_port_unlock();
+}
+
+void ui_set_special_gif_done_cb(void (*cb)(void))
+{
+    s_gif_done_cb = cb;
 }
 
 void ui_balance_set_api(const char *text)
@@ -314,7 +332,25 @@ static void gif_timer_cb(lv_timer_t *timer)
     if (s_gif_img == NULL) {
         return;
     }
-    s_gif_frame = (s_gif_frame + 1) % GIF_FRAMES;
+    if (s_gif_set != UI_GIF_NORMAL && s_gif_loops >= GIF_SPECIAL_LOOPS) {
+        return; /* special scene finished; keep the last frame until the next update */
+    }
+
+    if (s_gif_frame + 1 >= GIF_FRAMES) {
+        if (s_gif_set != UI_GIF_NORMAL) {
+            s_gif_loops++;
+            if (s_gif_loops >= GIF_SPECIAL_LOOPS) {
+                /* played all loops: freeze on the last frame, ask for a re-check */
+                if (s_gif_done_cb != NULL) {
+                    s_gif_done_cb();
+                }
+                return;
+            }
+        }
+        s_gif_frame = 0;
+    } else {
+        s_gif_frame++;
+    }
     lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][s_gif_frame]);
 }
 
