@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "cJSON.h"
-#include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -11,13 +10,37 @@
 #include "lwip/inet.h"
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
+#include "mbedtls/ssl.h"
+#include "mbedtls/x509_crt.h"
 
 static const char *TAG = "balance";
 
 #define DEEPSEEK_BALANCE_URL "https://api.deepseek.com/user/balance"
 #define DEEPSEEK_HOST        "api.deepseek.com"
 
-/* Diagnostics: log the resolved address and try a raw TCP connect. */
+/* Pinned CA chain (TrustAsia intermediate + DigiCert Global Root G2), embedded
+ * as a PEM text file. Verification does not rely on the generic certificate
+ * bundle (which fails when the CDN sends the root certificate as well). */
+extern const char deepseek_ca_pem_start[] asm("_binary_deepseek_ca_pem_start");
+
+static mbedtls_x509_crt s_ca_chain;
+
+static esp_err_t deepseek_ca_attach(void *conf)
+{
+    static bool inited = false;
+    if (!inited) {
+        inited = true;
+        mbedtls_x509_crt_init(&s_ca_chain);
+        int ret = mbedtls_x509_crt_parse(&s_ca_chain,
+                                         (const unsigned char *)deepseek_ca_pem_start,
+                                         strlen(deepseek_ca_pem_start) + 1);
+        ESP_LOGI(TAG, "pinned CA parse: ret=%d", ret);
+    }
+    mbedtls_ssl_conf_ca_chain((mbedtls_ssl_config *)conf, &s_ca_chain, NULL);
+    return ESP_OK;
+}
+
+/* Diagnostics: log the resolved address, try a raw TCP connect and dump heap. */
 static void network_probe(void)
 {
     ESP_LOGW(TAG, "heap: free=%u largest_internal=%u",
@@ -86,7 +109,7 @@ balance_result_t balance_fetch(const char *api_key, balance_info_t *info)
         .url = DEEPSEEK_BALANCE_URL,
         .method = HTTP_METHOD_GET,
         .timeout_ms = 15000,
-        .crt_bundle_attach = esp_crt_bundle_attach,
+        .crt_bundle_attach = deepseek_ca_attach,
         .buffer_size = 1024,
         .buffer_size_tx = 512,
     };
@@ -105,6 +128,14 @@ balance_result_t balance_fetch(const char *api_key, balance_info_t *info)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "https open failed: %s (errno=%d)", esp_err_to_name(err),
                  esp_http_client_get_errno(client));
+        int tls_code = 0;
+        int tls_flags = 0;
+        esp_http_client_get_and_clear_last_tls_error(client, &tls_code, &tls_flags);
+        if (tls_flags != 0) {
+            ESP_LOGW(TAG, "tls err=0x%x flags=0x%x", tls_code, tls_flags);
+        } else if (tls_code != 0) {
+            ESP_LOGW(TAG, "tls err=0x%x", tls_code);
+        }
         network_probe();
         result = BALANCE_ERR_NETWORK;
     } else {

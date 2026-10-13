@@ -14,7 +14,7 @@
 
 | 资源 | 说明 |
 | --- | --- |
-| MCU | ESP32-S2（实测芯片 ESP32-S2R2，Xtensa 单核 240 MHz；带 2MB 内置 PSRAM，本工程未启用） |
+| MCU | ESP32-S2（实测芯片 ESP32-S2R2，Xtensa 单核 240 MHz；内置 2MB PSRAM，本工程已启用作为额外堆） |
 | Flash | 4MB，DIO 模式，80MHz |
 | 屏幕 | 1.54 英寸 240x240 SPI 液晶，控制器 ST7789（无触屏） |
 | 按键 | 1 个机械按键，低电平有效（按下接地） |
@@ -152,14 +152,19 @@ CONFIG_IDF_TARGET="esp32s2"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y            # partitions.csv，factory 3MB
 
-# LVGL：英文界面 + 蓝白浅色主题 + 备用中文字库 + 改用 IDF 堆
+# LVGL：英文界面 + 蓝白浅色主题 + 改用 IDF 堆
 CONFIG_LV_COLOR_DEPTH_16=y
 # CONFIG_LV_THEME_DEFAULT_DARK is not set     # 蓝白风格使用 LVGL 浅色主题
-CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_16_CJK=y # 仅用于显示可能含中文的 Wi-Fi SSID，界面文字全英文
 CONFIG_LV_FONT_MONTSERRAT_10/12/14/28=y
 CONFIG_LV_USE_CLIB_MALLOC=y                # 必须！LVGL 内置分配器占 64KB 静态 DRAM 会链接失败
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
+
+# 内存：启用 2MB 内置 PSRAM，并让 mbedTLS 从通用堆分配
+CONFIG_SPIRAM=y                            # ESP32-S2R2 内置 2MB PSRAM，40MHz
+CONFIG_SPIRAM_SPEED_40M=y
+CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y         # 关键！默认 INTERNAL_MEM_ALLOC 会把 mbedTLS 限制在内部 RAM
+# CONFIG_MBEDTLS_HARDWARE_MPI is not set   # DeepSeek 链含 RSA-4096 中间证书，用软件 MPI 更稳
 
 # TLS/NTP
 CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192     # HTTPS 收发缓冲尽量小（ESP32-S2 内存紧张）
@@ -169,13 +174,20 @@ CONFIG_LWIP_SNTP_MAX_SERVERS=2             # ntp.aliyun.com + pool.ntp.org
 
 > 修改 `sdkconfig.defaults` 后需删除 `sdkconfig` 重新 `idf.py build`（只在首次生成时读取）。
 
-### 内存注意事项（重要）
+### 内存注意事项（重要，踩坑记录）
 
-ESP32-S2 无 PSRAM 启用时 DRAM 很紧。LVGL 绘制缓冲已从 240x40 降到 **240x24 双缓冲**
-（`main/display.c` 的 `LCD_DRAW_BUF_LINES`），TLS 缓冲也调小，为 mbedtls 握手腾出内存；
-否则会出现 `mbedtls_ssl_setup returned -0x7F00`（MBEDTLS_ERR_SSL_ALLOC_FAILED），
-表现为余额一直"网络异常"，而 DNS/TCP 探测正常。若后续功能增加导致 HTTPS 再次失败，
-优先检查此处内存占用。
+DeepSeek 的 CDN 证书链是 `leaf → TrustAsia(RSA-4096) → DigiCert G2`。在 TLS 握手做
+证书验签时，mbedTLS 需要为 RSA-4096 运算分配若干块**连续内存**：
+
+- 若保持 IDF 默认的 `CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC=y`，这些分配只能来自内部
+  DRAM，一旦内部堆碎片化就会失败（`MBEDTLS_ERR_RSA_PUBLIC_FAILED + MPI_ALLOC_FAILED`，
+  日志表现为 `mbedtls_ssl_handshake returned -0x2700` / `tls err=0x2700 flags=0x8`），
+  余额查询会间歇性失败直到完全失败；
+- 解决：`CONFIG_SPIRAM=y`（启用 2MB PSRAM）+ `CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y`
+  （允许 mbedTLS 从 PSRAM 取临时内存）+ 关闭硬件 MPI。
+
+另外 LVGL 绘制缓冲为 **240x24 双缓冲**（`main/display.c` 的 `LCD_DRAW_BUF_LINES`），
+TLS 缓冲也保持较小；应用整体约 1.9MB，务必保持在下方"坏块"地址之前。
 
 ### 屏幕显示异常时的调整点（`main/display.c`）
 
@@ -189,11 +201,24 @@ ESP32-S2 无 PSRAM 启用时 DRAM 很紧。LVGL 绘制缓冲已从 240x40 降到
 
 ### HTTPS 失败排查顺序
 
-1. 串口是否出现 `mbedtls_ssl_setup ... -0x7F00` → 内存不足（见上）；
+1. 日志出现 `tls err=0x2700 flags=0x8` + `heap: ... largest_internal=...` → mbedTLS
+   验签内存不足（检查 PSRAM 与 `MBEDTLS_DEFAULT_MEM_ALLOC` 配置，见上）；
 2. 是否出现 `dns ... failed` → DNS 问题（检查路由器 DHCP/DNS）；
 3. 是否出现 `tcp probe ... FAILED` → 该网络无外网或防火墙拦截 443；
 4. HTTP 401/403 → API Key 错误（界面 3 会显示"API Key 无效或已过期"）；
-5. 首次开机可能先显示"正在同步时间..."——TLS 需要正确时钟，NTP 同步后自动继续。
+5. 首次开机可能先显示"正在同步时间..."——TLS 需要正确时钟，NTP 同步后自动继续；
+6. 已内置 `deepseek_ca.pem`（TrustAsia 中间证书 + DigiCert G2 根）作为固定 CA。
+   若 DeepSeek 更换 CA（中间证书有效期至 2035），需更新该 PEM 并重新编译。
+
+### 硬件已知问题：flash 坏块
+
+本机开发板的 flash 在 **0x1FD000** 处存在一个损坏扇区（写入/擦除会挂住串口导致
+烧录中断）。规避方式：保持应用小于该地址（当前 ~1.9MB，结束于 0x1DDxxx）。因此：
+
+- 不要重新启用大体积字库（如中文字库 +500KB）等会把 app 推过 0x1FD000 的资源；
+- 若烧录在 app 尾部中断，使用 `--no-stub`（ROM 加载器）+ **分块/4KB 小块**写入可恢复
+  （stub 路径在本板更容易中断）；
+- 该 flash 已不可靠，建议更换模块/芯片。
 
 ---
 
@@ -228,6 +253,9 @@ deepseek-usage/
 - 首次上电：`softap configured: ssid=DeepSeek-XXXX (open)`，网页 `GET /` 返回 200；
 - Captive Portal：`nslookup example.com 192.168.4.1` 返回 192.168.4.1（DNS 劫持生效）；
 - 表单校验：密码过短返回错误页并在设备屏幕提示；合法配置保存后自动连接；
-- 已配置重启：跳过热点直连，`sta ip: 192.168.1.18` → 显示余额 `CNY 23.43`，10 秒周期刷新；
+- 已配置重启：跳过热点直连，`sta ip: 192.168.1.18` → 显示余额，约 10 秒周期刷新；
 - 运行中网页保留：`curl http://192.168.1.18/` 返回 200；
-- NTP：`time synced: 2026-10-13 00:33:18`，界面右上角时钟正常走动。
+- NTP：`time synced: 2026-10-13 00:33:18`，界面右上角时钟正常走动；
+- PSRAM：`Found 2MB PSRAM device / Adding pool of 2048K of PSRAM memory to heap allocator`；
+- TLS：`pinned CA parse: ret=0`，余额持续刷新（`balance: CNY 20.26`，此前证书验签
+  内存不足的问题已由 PSRAM + mbedTLS 通用堆分配解决，详见第 6 节）。

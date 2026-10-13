@@ -20,9 +20,9 @@
 #define COL_WIFI_OFF    lv_color_hex(0x94A3B8) /* gray: disconnected */
 #define COL_WIFI_SLASH  lv_color_hex(0xDC2626) /* red slash on the off icon */
 
-/* The UI itself is English (Montserrat). The CJK font is only used for the
- * connecting status line, because a user's SSID may contain Chinese. */
-#define SSID_FONT (&lv_font_source_han_sans_sc_16_cjk)
+/* The UI is English only; the status line may embed an SSID, which is
+ * rendered with the default Montserrat font as well. */
+#define SSID_FONT (&lv_font_montserrat_14)
 
 /* DeepSeek mascot animation, pre-converted to 100x100 RGB565 frames that live
  * in flash (27 frames @ 60 ms). Drawing straight from flash costs no RAM. */

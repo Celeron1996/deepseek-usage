@@ -13,6 +13,8 @@ idf_component_register(
         "."
     EMBED_FILES
         "deepseek_frames.bin"
+    EMBED_TXTFILES
+        "deepseek_ca.pem"
     REQUIRES
         esp_wifi
         esp_netif

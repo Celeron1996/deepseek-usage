@@ -8,10 +8,9 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
-# LVGL configuration (blue-white light UI; CJK font only renders Chinese SSIDs)
+# LVGL configuration (blue-white light UI, English only)
 CONFIG_LV_COLOR_DEPTH_16=y
 # CONFIG_LV_THEME_DEFAULT_DARK is not set
-CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_16_CJK=y
 CONFIG_LV_FONT_MONTSERRAT_10=y
 CONFIG_LV_FONT_MONTSERRAT_12=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
@@ -29,5 +28,19 @@ CONFIG_LWIP_SNTP_MAX_SERVERS=2
 # Keep the TLS buffers small; the balance request/response are tiny
 CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
+
+# The DeepSeek CDN chain is signed by an RSA-4096 intermediate CA. Software
+# MPI keeps the signature verification reliable on the S2.
+# CONFIG_MBEDTLS_HARDWARE_MPI is not set
+
+# Enable the 2MB embedded PSRAM as extra heap: the RSA-4096 chain verification
+# needs several KB of scratch memory during the TLS handshake.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_40M=y
+
+# Let mbedTLS allocate from the general heap (internal + PSRAM). The default
+# INTERNAL_MEM_ALLOC pins every mbedTLS allocation to internal DRAM, which
+# makes the RSA-4096 verification fail with MPI alloc errors.
+CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y
 
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
