@@ -124,8 +124,12 @@ static void balance_task(void *arg)
                 ui_balance_set_gif(UI_GIF_NORMAL);
             } else if (cents > s_last_cents) {
                 ui_balance_set_gif(UI_GIF_CHARGE);
+                ui_balance_flash_gif(UI_GIF_CHARGE);
+                ESP_LOGI(TAG, "balance up: charge scene");
             } else {
                 ui_balance_set_gif(UI_GIF_EXPEND);
+                ui_balance_flash_gif(UI_GIF_EXPEND);
+                ESP_LOGI(TAG, "balance down: expend scene");
             }
             s_last_cents = cents;
 

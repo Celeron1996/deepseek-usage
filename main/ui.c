@@ -37,6 +37,23 @@
  * 4 seconds), then freeze and ask for an immediate balance re-check. */
 #define GIF_SPECIAL_LOOPS 4
 
+/* Full-screen static flash shown briefly when the balance changes. */
+#define GIF_FLASH_MS   2000
+#define FLASH_W        240
+#define FLASH_H        240
+
+extern const uint8_t deepseek_charge_big_bin_start[] asm("_binary_deepseek_charge_big_bin_start");
+extern const uint8_t deepseek_expend_big_bin_start[] asm("_binary_deepseek_expend_big_bin_start");
+
+static const uint8_t *const s_flash_bin[2] = {
+    deepseek_charge_big_bin_start,
+    deepseek_expend_big_bin_start,
+};
+static lv_image_dsc_t s_flash_dsc[2];
+static lv_obj_t *s_flash;
+static lv_obj_t *s_flash_img;
+static lv_timer_t *s_flash_timer;
+
 extern const uint8_t deepseek_normal_frames_bin_start[] asm("_binary_deepseek_normal_frames_bin_start");
 extern const uint8_t deepseek_charge_frames_bin_start[] asm("_binary_deepseek_charge_frames_bin_start");
 extern const uint8_t deepseek_expend_frames_bin_start[] asm("_binary_deepseek_expend_frames_bin_start");
@@ -78,6 +95,8 @@ static lv_obj_t *screen_prepare(void)
     s_url = NULL;
     s_clock = NULL;
     s_gif_img = NULL;
+    s_flash = NULL;
+    s_flash_img = NULL;
     return scr;
 }
 
@@ -197,6 +216,16 @@ static void gif_frames_init(void)
             s_gif_dsc[s][i].data = s_gif_bin[s] + (size_t)i * frame_size;
         }
     }
+
+    for (int i = 0; i < 2; i++) {
+        s_flash_dsc[i].header.magic = LV_IMAGE_HEADER_MAGIC;
+        s_flash_dsc[i].header.cf = LV_COLOR_FORMAT_RGB565;
+        s_flash_dsc[i].header.w = FLASH_W;
+        s_flash_dsc[i].header.h = FLASH_H;
+        s_flash_dsc[i].header.stride = FLASH_W * 2;
+        s_flash_dsc[i].data_size = FLASH_W * FLASH_H * 2;
+        s_flash_dsc[i].data = s_flash_bin[i];
+    }
 }
 
 void ui_show_balance(void)
@@ -262,6 +291,21 @@ void ui_show_balance(void)
     lv_label_set_text(s_url, "config: waiting network");
     lv_obj_align(s_url, LV_ALIGN_BOTTOM_MID, 0, -3);
 
+    /* full-screen flash overlay (hidden until the balance changes) */
+    s_flash = lv_obj_create(scr);
+    lv_obj_remove_style_all(s_flash);
+    lv_obj_set_size(s_flash, LV_PCT(100), LV_PCT(100));
+    lv_obj_align(s_flash, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(s_flash, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_flash, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_scrollable(s_flash, false);
+    lv_obj_set_clickable(s_flash, false);
+    lv_obj_set_hidden(s_flash, true);
+
+    s_flash_img = lv_image_create(s_flash);
+    lv_image_set_src(s_flash_img, &s_flash_dsc[0]);
+    lv_obj_center(s_flash_img);
+
     lvgl_port_unlock();
 }
 
@@ -314,6 +358,34 @@ void ui_balance_set_gif(ui_gif_t gif)
 void ui_set_special_gif_done_cb(void (*cb)(void))
 {
     s_gif_done_cb = cb;
+}
+
+/* Runs inside the LVGL task; hides the full-screen flash after GIF_FLASH_MS. */
+static void flash_timer_cb(lv_timer_t *timer)
+{
+    s_flash_timer = NULL; /* the one-shot timer deletes itself afterwards */
+    if (s_flash != NULL) {
+        lv_obj_set_hidden(s_flash, true);
+    }
+}
+
+void ui_balance_flash_gif(ui_gif_t gif)
+{
+    if (gif != UI_GIF_CHARGE && gif != UI_GIF_EXPEND) {
+        return;
+    }
+    lvgl_port_lock(0);
+    if (s_flash != NULL && s_flash_img != NULL) {
+        lv_image_set_src(s_flash_img, &s_flash_dsc[gif == UI_GIF_CHARGE ? 0 : 1]);
+        lv_obj_move_foreground(s_flash);
+        lv_obj_set_hidden(s_flash, false);
+        if (s_flash_timer != NULL) {
+            lv_timer_delete(s_flash_timer);
+        }
+        s_flash_timer = lv_timer_create(flash_timer_cb, GIF_FLASH_MS, NULL);
+        lv_timer_set_repeat_count(s_flash_timer, 1); /* auto-deleted after it runs */
+    }
+    lvgl_port_unlock();
 }
 
 void ui_balance_set_api(const char *text)

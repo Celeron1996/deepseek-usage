@@ -15,6 +15,8 @@ idf_component_register(
         "deepseek_normal_frames.bin"
         "deepseek_charge_frames.bin"
         "deepseek_expend_frames.bin"
+        "deepseek_charge_big.bin"
+        "deepseek_expend_big.bin"
     EMBED_TXTFILES
         "deepseek_ca.pem"
     REQUIRES
