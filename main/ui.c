@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "esp_lvgl_port.h"
@@ -42,6 +43,13 @@
 #define FLASH_W        240
 #define FLASH_H        240
 
+/* Amount transition played after the flash: the new value slides in from
+ * below (balance up) or from above (balance down). The slide starts a short
+ * pause after the flash disappears so the old value stays readable. */
+#define AMOUNT_DELAY_MS 500
+#define AMOUNT_SLIDE_PX 28
+#define AMOUNT_ANIM_MS  400
+
 extern const uint8_t deepseek_charge_big_bin_start[] asm("_binary_deepseek_charge_big_bin_start");
 extern const uint8_t deepseek_expend_big_bin_start[] asm("_binary_deepseek_expend_big_bin_start");
 
@@ -53,6 +61,10 @@ static lv_image_dsc_t s_flash_dsc[2];
 static lv_obj_t *s_flash;
 static lv_obj_t *s_flash_img;
 static lv_timer_t *s_flash_timer;
+static lv_timer_t *s_apply_timer;    /* pause between flash and amount slide */
+static char s_pending_amount[40];    /* amount shown after the flash ends */
+static ui_gif_t s_pending_gif;
+static bool s_pending_valid;
 
 extern const uint8_t deepseek_normal_frames_bin_start[] asm("_binary_deepseek_normal_frames_bin_start");
 extern const uint8_t deepseek_charge_frames_bin_start[] asm("_binary_deepseek_charge_frames_bin_start");
@@ -97,6 +109,15 @@ static lv_obj_t *screen_prepare(void)
     s_gif_img = NULL;
     s_flash = NULL;
     s_flash_img = NULL;
+    if (s_flash_timer != NULL) {
+        lv_timer_delete(s_flash_timer);
+        s_flash_timer = NULL;
+    }
+    if (s_apply_timer != NULL) {
+        lv_timer_delete(s_apply_timer);
+        s_apply_timer = NULL;
+    }
+    s_pending_valid = false;
     return scr;
 }
 
@@ -318,9 +339,50 @@ static void set_label_text(lv_obj_t **label, const char *text)
     lvgl_port_unlock();
 }
 
+/* Slide-in transition of the amount label. Runs inside the LVGL task (started
+ * from the flash timer), so it must not take the port lock. */
+static void amount_anim_exec(void *var, int32_t offset)
+{
+    lv_obj_t *label = (lv_obj_t *)var;
+    lv_obj_set_style_translate_y(label, offset, LV_PART_MAIN);
+    int32_t dist = offset < 0 ? -offset : offset;
+    lv_obj_set_style_opa(label, (lv_opa_t)(255 - (dist * 255) / AMOUNT_SLIDE_PX), LV_PART_MAIN);
+}
+
+static void amount_apply_locked(const char *text, bool animate, bool up)
+{
+    if (s_amount == NULL) {
+        return;
+    }
+    lv_anim_delete(s_amount, NULL);
+    lv_label_set_text(s_amount, text);
+
+    if (!animate) {
+        lv_obj_set_style_translate_y(s_amount, 0, LV_PART_MAIN);
+        lv_obj_set_style_opa(s_amount, LV_OPA_COVER, LV_PART_MAIN);
+        return;
+    }
+
+    /* increased: slide up from below; decreased: slide down from above */
+    int32_t from = up ? AMOUNT_SLIDE_PX : -AMOUNT_SLIDE_PX;
+    lv_obj_set_style_translate_y(s_amount, from, LV_PART_MAIN);
+    lv_obj_set_style_opa(s_amount, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    lv_anim_t anim;
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, s_amount);
+    lv_anim_set_exec_cb(&anim, amount_anim_exec);
+    lv_anim_set_values(&anim, from, 0);
+    lv_anim_set_duration(&anim, AMOUNT_ANIM_MS);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+    lv_anim_start(&anim);
+}
+
 void ui_balance_set_amount(const char *text)
 {
-    set_label_text(&s_amount, text);
+    lvgl_port_lock(0);
+    amount_apply_locked(text, false, false);
+    lvgl_port_unlock();
 }
 
 void ui_balance_set_wifi(bool connected)
@@ -335,23 +397,26 @@ void ui_balance_set_wifi(bool connected)
     lvgl_port_unlock();
 }
 
-void ui_balance_set_gif(ui_gif_t gif)
+/* Must be called with the port lock held (or from the LVGL task). */
+static void gif_set_locked(ui_gif_t gif)
 {
-    if (gif >= GIF_SETS) {
+    if (s_gif_img == NULL || gif >= GIF_SETS) {
         return;
     }
-    lvgl_port_lock(0);
-    if (s_gif_img != NULL) {
-        if (gif == UI_GIF_NORMAL && s_gif_set == UI_GIF_NORMAL) {
-            /* idle animation is already running */
-        } else {
-            /* switching sets, or a new trigger of a special scene: play from the start */
-            s_gif_set = (uint8_t)gif;
-            s_gif_frame = 0;
-            s_gif_loops = 0;
-            lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][0]);
-        }
+    if (gif == UI_GIF_NORMAL && s_gif_set == UI_GIF_NORMAL) {
+        return; /* idle animation is already running */
     }
+    /* switching sets, or a new trigger of a special scene: play from the start */
+    s_gif_set = (uint8_t)gif;
+    s_gif_frame = 0;
+    s_gif_loops = 0;
+    lv_image_set_src(s_gif_img, &s_gif_dsc[s_gif_set][0]);
+}
+
+void ui_balance_set_gif(ui_gif_t gif)
+{
+    lvgl_port_lock(0);
+    gif_set_locked(gif);
     lvgl_port_unlock();
 }
 
@@ -360,27 +425,55 @@ void ui_set_special_gif_done_cb(void (*cb)(void))
     s_gif_done_cb = cb;
 }
 
-/* Runs inside the LVGL task; hides the full-screen flash after GIF_FLASH_MS. */
+/* Second stage: applies the deferred amount update (slide transition) and
+ * starts the matching special scene. Runs inside the LVGL task. */
+static void apply_timer_cb(lv_timer_t *timer)
+{
+    s_apply_timer = NULL; /* the one-shot timer deletes itself afterwards */
+    if (s_pending_valid) {
+        s_pending_valid = false;
+        amount_apply_locked(s_pending_amount, true, s_pending_gif == UI_GIF_CHARGE);
+        gif_set_locked(s_pending_gif);
+    }
+}
+
+/* Runs inside the LVGL task; hides the full-screen flash after GIF_FLASH_MS,
+ * then waits a short pause before the amount update is applied. */
 static void flash_timer_cb(lv_timer_t *timer)
 {
     s_flash_timer = NULL; /* the one-shot timer deletes itself afterwards */
     if (s_flash != NULL) {
         lv_obj_set_hidden(s_flash, true);
     }
+    if (s_pending_valid) {
+        if (s_apply_timer != NULL) {
+            lv_timer_delete(s_apply_timer);
+        }
+        s_apply_timer = lv_timer_create(apply_timer_cb, AMOUNT_DELAY_MS, NULL);
+        lv_timer_set_repeat_count(s_apply_timer, 1); /* auto-deleted after it runs */
+    }
 }
 
-void ui_balance_flash_gif(ui_gif_t gif)
+void ui_balance_flash_update(ui_gif_t gif, const char *amount_text)
 {
     if (gif != UI_GIF_CHARGE && gif != UI_GIF_EXPEND) {
         return;
     }
     lvgl_port_lock(0);
-    if (s_flash != NULL && s_flash_img != NULL) {
+    if (s_flash != NULL && s_flash_img != NULL && s_amount != NULL && amount_text != NULL) {
+        strlcpy(s_pending_amount, amount_text, sizeof(s_pending_amount));
+        s_pending_gif = gif;
+        s_pending_valid = true;
+
         lv_image_set_src(s_flash_img, &s_flash_dsc[gif == UI_GIF_CHARGE ? 0 : 1]);
         lv_obj_move_foreground(s_flash);
         lv_obj_set_hidden(s_flash, false);
         if (s_flash_timer != NULL) {
             lv_timer_delete(s_flash_timer);
+        }
+        if (s_apply_timer != NULL) {
+            lv_timer_delete(s_apply_timer);
+            s_apply_timer = NULL;
         }
         s_flash_timer = lv_timer_create(flash_timer_cb, GIF_FLASH_MS, NULL);
         lv_timer_set_repeat_count(s_flash_timer, 1); /* auto-deleted after it runs */

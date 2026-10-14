@@ -27,8 +27,11 @@ void ui_show_balance(void);
 void ui_balance_set_amount(const char *text);
 void ui_balance_set_wifi(bool connected); /* small icon: green wifi / gray wifi + red slash */
 void ui_balance_set_gif(ui_gif_t gif);
-/* Show the full-screen charge/expend still for about 2 seconds. */
-void ui_balance_flash_gif(ui_gif_t gif);
+/* Show the full-screen charge/expend still for about 2 seconds. The amount
+ * field is intentionally NOT updated yet: when the still disappears the new
+ * value slides in (up for charge, down for expend) and the matching scene
+ * starts, so the balance change stays visible to the user. */
+void ui_balance_flash_update(ui_gif_t gif, const char *amount_text);
 /* Register a callback invoked from the LVGL task once a special scene
  * (charge/expend) finished its loop count. Use it to trigger a re-check. */
 void ui_set_special_gif_done_cb(void (*cb)(void));

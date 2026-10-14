@@ -116,19 +116,20 @@ static void balance_task(void *arg)
         if (r == BALANCE_OK) {
             char text[40];
             snprintf(text, sizeof(text), "%s %s", info.currency, info.total);
-            ui_balance_set_amount(text);
 
-            /* pick the mascot animation from the balance change */
+            /* Pick the mascot animation from the balance change. When the
+             * balance changed, the amount field is only updated after the
+             * full-screen still is gone (slide transition inside ui.c), so
+             * the update is perceived as an event and stays visible. */
             long cents = balance_to_cents(info.total);
             if (s_last_cents < 0 || cents == s_last_cents) {
+                ui_balance_set_amount(text);
                 ui_balance_set_gif(UI_GIF_NORMAL);
             } else if (cents > s_last_cents) {
-                ui_balance_set_gif(UI_GIF_CHARGE);
-                ui_balance_flash_gif(UI_GIF_CHARGE);
+                ui_balance_flash_update(UI_GIF_CHARGE, text);
                 ESP_LOGI(TAG, "balance up: charge scene");
             } else {
-                ui_balance_set_gif(UI_GIF_EXPEND);
-                ui_balance_flash_gif(UI_GIF_EXPEND);
+                ui_balance_flash_update(UI_GIF_EXPEND, text);
                 ESP_LOGI(TAG, "balance down: expend scene");
             }
             s_last_cents = cents;
