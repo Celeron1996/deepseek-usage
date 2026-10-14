@@ -432,15 +432,14 @@ void ui_set_special_gif_done_cb(void (*cb)(void))
     s_gif_done_cb = cb;
 }
 
-/* Second stage: applies the deferred amount update (slide transition) and
- * starts the matching special scene. Runs inside the LVGL task. */
+/* Second stage: applies the deferred amount update (slide transition).
+ * Runs inside the LVGL task. */
 static void apply_timer_cb(lv_timer_t *timer)
 {
     s_apply_timer = NULL; /* the one-shot timer deletes itself afterwards */
     if (s_pending_valid) {
         s_pending_valid = false;
         amount_apply_locked(s_pending_amount, true, s_pending_gif == UI_GIF_CHARGE);
-        gif_set_locked(s_pending_gif);
     }
 }
 
@@ -460,7 +459,8 @@ static void schedule_apply_locked(void)
     lv_timer_set_repeat_count(s_apply_timer, 1); /* auto-deleted after it runs */
 }
 
-/* The shrink-out finished: hide the overlay and continue with the deferred
+/* The shrink-out finished: hide the overlay, start the special scene right
+ * away (no idle frame may show in between) and continue with the deferred
  * amount update after a pause. Runs inside the LVGL task. */
 static void flash_shrink_done_cb(lv_anim_t *anim)
 {
@@ -471,6 +471,7 @@ static void flash_shrink_done_cb(lv_anim_t *anim)
         lv_image_set_scale(s_flash_img, FLASH_SCALE_MAX); /* reset for the next show */
     }
     if (s_pending_valid) {
+        gif_set_locked(s_pending_gif);
         schedule_apply_locked();
     }
 }
@@ -481,6 +482,7 @@ static void flash_timer_cb(lv_timer_t *timer)
     s_flash_timer = NULL; /* the one-shot timer deletes itself afterwards */
     if (s_flash_img == NULL) {
         if (s_pending_valid) {
+            gif_set_locked(s_pending_gif);
             schedule_apply_locked();
         }
         return;
