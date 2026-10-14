@@ -43,6 +43,13 @@
 #define FLASH_W        240
 #define FLASH_H        240
 
+/* Flash overlay zoom: the still grows in when it appears and shrinks out
+ * again before the amount transition. 256 = the original size. */
+#define FLASH_SCALE_MIN  64    /* start/end size of the zoom (1/4) */
+#define FLASH_SCALE_MAX  256
+#define FLASH_GROW_MS    300
+#define FLASH_SHRINK_MS  250
+
 /* Amount transition played after the flash: the new value slides in from
  * below (balance up) or from above (balance down). The slide starts a short
  * pause after the flash disappears so the old value stays readable. */
@@ -437,21 +444,58 @@ static void apply_timer_cb(lv_timer_t *timer)
     }
 }
 
-/* Runs inside the LVGL task; hides the full-screen flash after GIF_FLASH_MS,
- * then waits a short pause before the amount update is applied. */
-static void flash_timer_cb(lv_timer_t *timer)
+/* Zoom of the full-screen still; runs inside the LVGL task. */
+static void flash_scale_anim_cb(void *var, int32_t scale)
 {
-    s_flash_timer = NULL; /* the one-shot timer deletes itself afterwards */
+    lv_image_set_scale((lv_obj_t *)var, (uint32_t)scale);
+}
+
+/* Schedules the deferred amount update (one-shot timer, LVGL task only). */
+static void schedule_apply_locked(void)
+{
+    if (s_apply_timer != NULL) {
+        lv_timer_delete(s_apply_timer);
+    }
+    s_apply_timer = lv_timer_create(apply_timer_cb, AMOUNT_DELAY_MS, NULL);
+    lv_timer_set_repeat_count(s_apply_timer, 1); /* auto-deleted after it runs */
+}
+
+/* The shrink-out finished: hide the overlay and continue with the deferred
+ * amount update after a pause. Runs inside the LVGL task. */
+static void flash_shrink_done_cb(lv_anim_t *anim)
+{
     if (s_flash != NULL) {
         lv_obj_set_hidden(s_flash, true);
     }
-    if (s_pending_valid) {
-        if (s_apply_timer != NULL) {
-            lv_timer_delete(s_apply_timer);
-        }
-        s_apply_timer = lv_timer_create(apply_timer_cb, AMOUNT_DELAY_MS, NULL);
-        lv_timer_set_repeat_count(s_apply_timer, 1); /* auto-deleted after it runs */
+    if (s_flash_img != NULL) {
+        lv_image_set_scale(s_flash_img, FLASH_SCALE_MAX); /* reset for the next show */
     }
+    if (s_pending_valid) {
+        schedule_apply_locked();
+    }
+}
+
+/* Runs inside the LVGL task; starts the shrink-out after GIF_FLASH_MS. */
+static void flash_timer_cb(lv_timer_t *timer)
+{
+    s_flash_timer = NULL; /* the one-shot timer deletes itself afterwards */
+    if (s_flash_img == NULL) {
+        if (s_pending_valid) {
+            schedule_apply_locked();
+        }
+        return;
+    }
+    lv_anim_delete(s_flash_img, NULL);
+
+    lv_anim_t anim;
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, s_flash_img);
+    lv_anim_set_exec_cb(&anim, flash_scale_anim_cb);
+    lv_anim_set_values(&anim, FLASH_SCALE_MAX, FLASH_SCALE_MIN);
+    lv_anim_set_duration(&anim, FLASH_SHRINK_MS);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_in);
+    lv_anim_set_completed_cb(&anim, flash_shrink_done_cb);
+    lv_anim_start(&anim);
 }
 
 void ui_balance_flash_update(ui_gif_t gif, const char *amount_text)
@@ -465,9 +509,22 @@ void ui_balance_flash_update(ui_gif_t gif, const char *amount_text)
         s_pending_gif = gif;
         s_pending_valid = true;
 
+        /* grow the still in from small to full size */
+        lv_anim_delete(s_flash_img, NULL);
+        lv_image_set_scale(s_flash_img, FLASH_SCALE_MIN);
         lv_image_set_src(s_flash_img, &s_flash_dsc[gif == UI_GIF_CHARGE ? 0 : 1]);
         lv_obj_move_foreground(s_flash);
         lv_obj_set_hidden(s_flash, false);
+
+        lv_anim_t grow;
+        lv_anim_init(&grow);
+        lv_anim_set_var(&grow, s_flash_img);
+        lv_anim_set_exec_cb(&grow, flash_scale_anim_cb);
+        lv_anim_set_values(&grow, FLASH_SCALE_MIN, FLASH_SCALE_MAX);
+        lv_anim_set_duration(&grow, FLASH_GROW_MS);
+        lv_anim_set_path_cb(&grow, lv_anim_path_ease_out);
+        lv_anim_start(&grow);
+
         if (s_flash_timer != NULL) {
             lv_timer_delete(s_flash_timer);
         }
